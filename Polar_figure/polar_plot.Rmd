@@ -17,18 +17,22 @@ polar_values
 
 We first slice the first 5 rows, then fix the encoding for `Od Amp1`, then remove the empty column in between
 ```{r}
-polar_values <- polar_values %>% slice(1:5) %>% mutate(`Od Amp1` = as.numeric(as.character(`Od Amp1`)), Patient=X__1) %>% select(Patient,`Od Amp1`:`Od Amp3`, `Od Angle1`:`Od Angle3`)
+polar_values <- polar_values %>% 
+  slice(1:5) %>% 
+  mutate(Patient=as.factor(X__1)) %>% 
+  select(Patient,`Od Amp1`:`Od Amp3`, `Od Angle1`:`Od Angle3`)
 polar_values
 ```
 
 ## However, we aren't done. The data is "wide" instead of "long" and we have mixed session IDs (Amp 1-3 and Angle 1-3) with the value type. 
 
 Let's first deal with the wide issue. If we google "R wide to long" we find this page near the top http://www.cookbook-r.com/Manipulating_data/Converting_data_between_wide_and_long_format/ which tells us that `gather` is the function we want.
-```{r}
 
+`Test_Session` is the name for the column containing `Od Amp1 to Od Angle`
+`Value` is the name for the column holding the test measurements.
+```{r}
 polar_values %>% 
   gather(Test_Session, Value, `Od Amp1`:`Od Angle3`) 
-
 ```
 
 ## Now we need to extract the session (1,2,3) and the test type (Amp or Angle)
@@ -44,7 +48,7 @@ polar_values %>%
 
 ## Now we have two value types (Angle and Amplitude) in one column. So we need to go from long to wide to split them apart. 
 
-We drop the now useless Test_Session column and then us the `spread` function to use the Test and Value columns to get it wide. 
+We drop the now useless Test_Session column, grab the session number from the end with `str_sub`,  then us the `spread` function to use the Test and Value columns to get it wide. 
 ```{r}
 polar_values %>% 
   gather(Test_Session, Value, `Od Amp1`:`Od Angle3`) %>% 
@@ -84,7 +88,8 @@ reformatted_values %>% ggplot(aes(y=`Od Amp`, x=`Od Angle`)) + coord_polar() + g
 
 First, I'm  suspicious that the ranges of values is from the smallest to the largest. Or maybe 0 to the largest. We can test this by filtering out the bigger values.
 ```{r}
-reformatted_values %>% filter(`Od Angle` < 300) %>% 
+reformatted_values %>% 
+  filter(`Od Angle` < 300) %>% 
   ggplot(aes(y=`Od Amp`, x=`Od Angle`)) + coord_polar() + geom_point()
 ```
 
