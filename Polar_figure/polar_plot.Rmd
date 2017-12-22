@@ -1,0 +1,141 @@
+---
+title: "Going in circles"
+output: html_notebook
+---
+
+First time making a polar plot....let's see if ggplot2 can do it.
+
+## Import data with readxl
+```{r}
+library(tidyverse)
+library(stringr)
+polar_values <- readxl::read_xlsx('polar_values.xlsx')
+polar_values
+```
+
+## OK, first let's remove the notes. 
+
+We first slice the first 5 rows, then fix the encoding for `Od Amp1`, then remove the empty column in between
+```{r}
+polar_values <- polar_values %>% slice(1:5) %>% mutate(`Od Amp1` = as.numeric(as.character(`Od Amp1`)), Patient=X__1) %>% select(Patient,`Od Amp1`:`Od Amp3`, `Od Angle1`:`Od Angle3`)
+polar_values
+```
+
+## However, we aren't done. The data is "wide" instead of "long" and we have mixed session IDs (Amp 1-3 and Angle 1-3) with the value type. 
+
+Let's first deal with the wide issue. If we google "R wide to long" we find this page near the top http://www.cookbook-r.com/Manipulating_data/Converting_data_between_wide_and_long_format/ which tells us that `gather` is the function we want.
+```{r}
+
+polar_values %>% 
+  gather(Test_Session, Value, `Od Amp1`:`Od Angle3`) 
+
+```
+
+## Now we need to extract the session (1,2,3) and the test type (Amp or Angle)
+
+We will use the fact that the session is *always* at the end to our advantage.
+
+The str_sub function from the stringr package allows you to pick 'negative' positions in the string. So we pick last value and the first to the second last position to get what we need.
+```{r}
+polar_values %>% 
+  gather(Test_Session, Value, `Od Amp1`:`Od Angle3`) %>% 
+  mutate(Session = str_sub(Test_Session, -1), Test = str_sub(Test_Session,1,-2))
+```
+
+## Now we have two value types (Angle and Amplitude) in one column. So we need to go from long to wide to split them apart. 
+
+We drop the now useless Test_Session column and then us the `spread` function to use the Test and Value columns to get it wide. 
+```{r}
+polar_values %>% 
+  gather(Test_Session, Value, `Od Amp1`:`Od Angle3`) %>% 
+  mutate(Session = str_sub(Test_Session, -1), Test = str_sub(Test_Session,1,-2)) %>% 
+  select(-Test_Session) %>% 
+  spread(Test, Value)
+
+```
+
+Boom. Mic drop.
+
+## Putting it all together and saving so we don't have to see this big code block later. 
+```{r}
+reformatted_values <- 
+  polar_values %>% 
+  gather(Test_Session, Value, `Od Amp1`:`Od Angle3`) %>% 
+  mutate(Session = str_sub(Test_Session, -1), Test = str_sub(Test_Session,1,-2)) %>% 
+  select(-Test_Session) %>% 
+  spread(Test, Value)
+
+reformatted_values
+```
+
+## First plot. Does this work?
+```{r}
+reformatted_values %>% ggplot(aes(y=`Od Amp`, x=`Od Angle`)) + geom_point()
+```
+
+## But wait, this is a polar plot....
+
+Fortunately ggplot has a function to transform cartesian values into polar values: `coord_polar`
+```{r}
+reformatted_values %>% ggplot(aes(y=`Od Amp`, x=`Od Angle`)) + coord_polar() + geom_point()
+```
+
+## Not bad, but we have a lot of little things to do. 
+
+First, I'm  suspicious that the ranges of values is from the smallest to the largest. Or maybe 0 to the largest. We can test this by filtering out the bigger values.
+```{r}
+reformatted_values %>% filter(`Od Angle` < 300) %>% 
+  ggplot(aes(y=`Od Amp`, x=`Od Angle`)) + coord_polar() + geom_point()
+```
+
+## Yeah, so we need to tell ggplot what the range of values is. 
+```{r}
+reformatted_values %>% filter(`Od Angle` < 300) %>% 
+  ggplot(aes(y=`Od Amp`, x=`Od Angle`)) + 
+  coord_polar() + 
+  geom_point() +
+  scale_x_continuous(limits=c(0,360), breaks = c(0,30,60,90,120,150,180,210,240,270,300,330)) 
+```
+
+## Cool, the range goes to 360 as expected. Still a few more things to do: 
+
+1. Rotate the start point so 90 is the top
+2. Change directions of values from CW to CCW
+3. Add color and prettify
+
+We examine the coord_polar options (type `?coord_polar` in the R console) and see that `start` and `direction` are options. We want to shift 90 degrees...but the `start` parameter is in radians. Some quick googling let's us know that 90 degree ~ 1.57 radians. Let's use that. And -1 for direction to make it counter clockwise. 
+```{r}
+reformatted_values %>% 
+  ggplot(aes(y=`Od Amp`, x=`Od Angle`)) + 
+  coord_polar(start = 1.57, direction = -1) + 
+  geom_point() +
+  scale_x_continuous(limits=c(0,360), breaks = c(0,30,60,90,120,150,180,210,240,270,300,330)) 
+```
+
+## Hmm, wrong way. (want 180 on the left) Let's make it negative.
+```{r}
+reformatted_values %>% 
+  ggplot(aes(y=`Od Amp`, x=`Od Angle`)) + 
+  coord_polar(start = -1.57, direction = -1) + 
+  geom_point() +
+  scale_x_continuous(limits=c(0,360), breaks = c(0,30,60,90,120,150,180,210,240,270,300,330)) 
+```
+
+
+## OK, Final plot with some color and geom_point tweaking!
+
+`theme_bw` makes the background white instead of gray, which I prefer
+
+`alpha` in `geom_point` makes the points semi-transparent
+
+`scale_colour_brewer` is a nicer color palette, in my opinion
+
+`colour` and `shape` in ggplot() gives us color and shape for the patients and three sessions
+```{r}
+reformatted_values %>% ggplot(aes(y=`Od Amp`, x=`Od Angle`, colour=Patient, shape=Session)) + 
+  coord_polar(start = -1.57, direction = -1) + 
+  geom_point(size=3, alpha=0.7) + 
+  theme_bw() + 
+  scale_x_continuous(limits=c(0,360), breaks = c(0,30,60,90,120,150,180,210,240,270,300,330)) + 
+  scale_color_brewer(palette ='Set1') + xlab('Angle') + ylab('Amplitude') + ggtitle('OD')
+```
