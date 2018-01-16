@@ -1,0 +1,134 @@
+---
+title: "Analysis of Data from Aaron Rising (Pig something?)"
+output: 
+  html_notebook:
+   toc: True
+---
+
+Data from Aaron Rising.
+
+Two different excel files (Cobra and Eel). Pig names?
+
+Aaron told me to take the 'first tab' in each excel file. Which is not the case, as at least to me, 'Sheet 1' is empty in both. So I'm using the next tab in both, which is 'Normalized 2 Base For Comb'
+
+# Load data and look at structure (str)
+```{r}
+library(tidyverse)
+library(ggsci)
+library(skimr)
+cobra <- readxl::read_xls('Cobra 749--_Normalized_Data_.xls', sheet = 'Normalized 2 Base For Comb')
+cobra %>% str()
+
+eel <- readxl::read_xls('Eel 668--_Normalized_Data_.xls', sheet = 'Normalized 2 Base For Comb')
+eel %>% str()
+```
+
+# Head (first few lines)
+```{r}
+cobra %>% head()
+eel %>% head()
+```
+
+Looks like we have implant (cobra) vs sham (eel)?
+
+We have several types of `Output` (`r eel$Output %>% unique()`) which are different variables that have been measured. I asked Aaron what he cared most about and he suggested AUC, N1P1, and Latency
+
+# AUC, N1P1, Latency
+We need to get the exact names for those variables
+
+We can extract all of the `Output` values and only print the unique ones
+```{r}
+eel$Output %>% unique()
+```
+
+OK, so `Area-Under-Curve`, `N1P1`, and `N1-Latency` are the three variables we'll take a look at. Or fewer if I get confused. 
+
+Let's start by just looking at AUC. Generically it is a machine learning measure of how often an algorithm will pick distinguish the right answer over the wrong one. 1 is perfect. 0 is perfect wrong. 0.5 is a monkey flipping coins. Not sure what it means here, but that isn't a deal killer yet. 
+
+# Summary of eel and cobra AUC
+Get the summary data from just the AUC values for each pig
+```{r}
+cobra %>% filter(Output == 'Area-Under-Curve') %>% pull(Data) %>% summary()
+eel %>% filter(Output == 'Area-Under-Curve') %>% pull(Data) %>% summary()
+```
+
+So the sham (eel) has a better AUC? 
+
+# What kind of time points or conditions or whatever do we have again?
+```{r}
+cobra %>% filter(Output == 'Area-Under-Curve')
+```
+
+Oh, we have *two kinds or regions*. Didn't see that before. So the above summary doesn't take that into account. 
+
+# Summary by pig and region
+```{r}
+cobra %>% filter(Output == 'Area-Under-Curve') %>% group_by(Region) %>% summarise(mean = mean(Data), median= median(Data))
+eel %>% filter(Output == 'Area-Under-Curve') %>% group_by(Region) %>% summarise(mean = mean(Data), median= median(Data))
+```
+
+
+We also have time (Week)
+
+
+
+# Plot AUC by time and region and pig
+x axis is time, y axis is AUC, and split by region/pig
+```{r}
+cobra_eel_AUC <- rbind(cobra %>% filter(Output == 'Area-Under-Curve'), eel %>% filter(Output == 'Area-Under-Curve'))
+cobra_eel_AUC %>% 
+  ggplot(aes(x=Week, y=Data, colour=Region)) + 
+  geom_point() 
+```
+
+# Prettier plot with lines and more formatting
+```{r}
+cobra_eel_AUC %>% 
+  ggplot(aes(x=Week, y=Data, colour=Region, shape = Pig_Name)) + 
+  geom_point(size=4) + 
+  geom_smooth() + # this draws the smoothed lines through the four points. It auto picks an algorithm that works. loess was used here
+  theme_bw() + scale_colour_npg() +
+  ylab('AUC') 
+```
+
+# N1P1 Plot
+```{r}
+rbind(cobra %>% filter(Output == 'N1P1'), eel %>% filter(Output == 'Area-Under-Curve')) %>% 
+  ggplot(aes(x=Week, y=Data, colour=Region, shape = Pig_Name)) + 
+  geom_point(size=4) + 
+  geom_smooth() + # this draws the smoothed lines through the four points. It auto picks an algorithm that works. loess was used here
+  theme_bw() + scale_colour_npg() +
+  ylab('N1P1')
+```
+
+# Latency plot
+```{r}
+rbind(cobra %>% filter(Output == 'N1-Latency'), eel %>% filter(Output == 'Area-Under-Curve')) %>% 
+  ggplot(aes(x=Week, y=Data, colour=Region, shape = Pig_Name)) + 
+  geom_point(size=4) + 
+  geom_smooth() + # this draws the smoothed lines through the four points. It auto picks an algorithm that works. loess was used here
+  theme_bw() + scale_colour_npg() +
+  ylab('N1P1')
+```
+
+# Bonus
+
+We have many variables. We can get a quick sense of how all of the variables separate out the major data categories with a PCA
+```{r}
+all_pigs <- rbind(cobra, eel) %>% 
+  select(Region, Pig_Name, Week, Output, Data) %>% 
+  spread(Output, Data)
+# toss P-Prime-Latency column
+all_pigs <- all_pigs %>% select(-`P-Prime-Latency`)
+# remove columns with NA
+all_pigs <- all_pigs[complete.cases(all_pigs), complete.cases(t(all_pigs))]
+pca <- prcomp(all_pigs[,4:ncol(all_pigs)], scale. = T)
+
+# pull out PCA coordinates and add to all_pigs
+all_pigs <- cbind(all_pigs, pca$x)
+
+ggplot(all_pigs, aes(x=PC1, y=PC2, color=as.factor(Week), shape=Region)) + 
+  geom_point(size=5) + 
+  theme_bw() + 
+  scale_colour_npg() 
+```
