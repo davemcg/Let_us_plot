@@ -1,0 +1,143 @@
+---
+title: "NGS (Exome) Gene Coverage Analysis"
+output: 
+  html_notebook:
+   toc: True
+---
+
+# Load data
+This is a departure from the previous installments, as we are loading in a processed dataset. The reasons why are numerous:
+
+1. The original data is 330mb, compressed
+2. After loading (2 minutes on my quite fast computer) and uncompressing, it takes over 10GB of RAM on my computer
+3. The original data needed a severe amount of massaging to make it (easily) useable:
+- Annotating with gene name
+- Identifying primary transcript for gene
+- Expanding range data into row-form
+
+```{r}
+library(tidyverse)
+library(cowplot) # you probably need to install this with install.packages('cowplot')
+dd_class <- read_csv('dd_class.csv')
+
+head(dd_class)
+```
+
+# How many genes are in this dataset?
+```{r}
+dd_class$Name %>% unique() %>% length()
+```
+
+# What genes are in here?
+```{r}
+dd_class$Name %>% unique() %>% sort()
+```
+
+# How many data points (bases) per gene?
+```{r}
+dd_class %>% 
+  group_by(Name) %>% 
+  summarise(Count=n())
+```
+
+# How many exons per gene?
+```{r}
+dd_class %>% 
+  select(Name, `Exon Number`) %>% 
+  unique() %>% 
+  group_by(Name) %>% 
+  summarise(Count = n())
+```
+
+# How many base pairs of ABCA4 (well, ABCA4 exons) is covered by more than 10 reads?
+Base R style
+```{r}
+# Grab the Read_Depth vector from the data frame filtered by ABCA4 values
+depth_abca4 <- dd_class %>% 
+  filter(Name=='ABCA4') %>% 
+  pull(Read_Depth)
+sum(depth_abca4 > 10)
+```
+
+# 5 reads?
+```{r}
+sum(depth_abca4 > 5)
+```
+
+# Let's check all of the genes to see which are the worst covered
+```{r}
+dd_class %>% 
+  group_by(Name) %>% 
+  summarise(Total_Bases = n(),
+            LT5 = sum(Read_Depth < 5),
+            LT10 = sum(Read_Depth < 10),
+            Good = sum(Read_Depth >= 10),
+            P5 = LT5 / Total_Bases,
+            P10 = LT10 / Total_Bases) %>% 
+  arrange(-P10)
+```
+
+
+# We can visually display the data, also
+```{r}
+dd_class %>% 
+  ggplot(aes(x=Read_Depth, group=Name)) +
+  geom_density()
+```
+
+# Hard to see what is going on, let's make little plots for each gene
+```{r, fig.width=10, fig.height=10}
+dd_class %>% 
+  ggplot(aes(x=Read_Depth, group=Name)) +
+  facet_wrap(~Name) + 
+  geom_density()
+```
+
+
+# Where are genes poorly covered?
+## BBIP1
+```{r}
+dd_class %>% filter(Name=='BBIP1') %>% 
+  ggplot(aes(x=Start, y=Read_Depth)) + 
+  facet_wrap(~`Exon Number`, scales = 'free_x', nrow=1, strip.position = 'bottom') + 
+  geom_point(size=0.1) + theme_minimal() +
+  theme(axis.text.x=element_blank(), 
+        axis.ticks.x = element_blank(), 
+        panel.grid.minor = element_blank(), 
+        panel.grid.major.x = element_blank(),
+        legend.position = 'none') + 
+  ylab('Depth') + 
+  xlab('Exon Number')
+
+```
+
+
+# Make a coverage plot for many genes (This is advanced stuff!!!)
+
+```{r, fig.width=6, fig.height=3}
+gene_list <- c('ABCA4', 'PITX2','VSX2','RPGR','SOX10')
+ 
+plot_maker <- function(gene){
+  num_of_exons <- dd_class%>% filter(Name==gene) %>% pull(`Exon Number`) %>% as.numeric() %>% max()
+   # expand to create a row for each sequence and fill in previous values
+  dd_class %>% filter(Name==gene) %>%
+    mutate(`Exon Number`= factor(`Exon Number`,levels=0:num_of_exons)) %>%  
+    ggplot(aes(x=Start, y=Read_Depth)) + 
+    facet_wrap(~`Exon Number`, scales = 'free_x', nrow=1, strip.position = 'bottom') + 
+    geom_point(size=0.1) + theme_minimal() +
+    theme(axis.text.x=element_blank(), 
+          axis.ticks.x = element_blank(), 
+          panel.grid.minor = element_blank(), 
+          panel.grid.major.x = element_blank(),
+          legend.position = 'none') + 
+    ylab('Depth') + 
+    xlab(gene)
+}
+
+plots <- list()
+for (i in gene_list){
+  plots[[i]] <- plot_maker(i)
+}
+
+plot_grid(plotlist = plots, ncol=1)
+```

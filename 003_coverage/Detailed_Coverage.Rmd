@@ -1,0 +1,109 @@
+---
+title: "NGS Gene Coverage Plots"
+output: html_notebook
+---
+# Run below on bash
+## Call mosdepth on bam to calculate bp-specific read depth
+```{bash}
+# biowulf2 
+sinteractive --cpus-per-task 16
+module load mosdepth
+mosdepth -t 16 41001412010527 41001412010527_realigned_recal.bam &
+```
+
+## Intersect base pair depth info with transcript and exon number
+The intersect is to select regions overlapping exons and to label them with the transcript name and exon number present in gencode_genes_v27lift37.codingExons.ensembl.bed.gz
+```{bash}
+# gencode_genes_v27lift37.codingExons.bed was downloaded from the UCSC table browser from genocde gene v27lift37 and 'coding exons' with 0 padding were selected as the output for the bed file
+# my ~/git/ChromosomeMappings/convert_notation.py was then used to convert the UCSC notation in ensembl notation, which my bam uses
+# files in biowulf2:/data/mcgaugheyd/genomes/GRCh37/
+module load bedtools
+~/git/ChromosomeMappings/convert_notation.py -c ~/git/ChromosomeMappings/GRCh37_gencode2ensembl.txt -f gencode_genes_v27lift37.codingExons.bed | sort -k1,1 -k2,2n | gzip > gencode_genes_v27lift37.codingExons.ensembl.bed.gz
+bedtools intersect -wa -wb -a 41001412010527.per-base.bed.gz -b /data/mcgaugheyd/genomes/GRCh37/gencode_genes_v27lift37.codingExons.ensembl.bed.gz | bgzip  > 41001412010527.per-base.labeled.bed.gz &
+```
+
+# Now it's R time!
+## Prepare Metadata
+ftp://ftp.sanger.ac.uk/pub/gencode/Gencode_human/release_27/GRCh37_mapping/gencode.v27lift37.metadata.HGNC.gz
+
+and
+
+ftp://ftp.sanger.ac.uk/pub/gencode/Gencode_human/release_27/GRCh37_mapping/gencode.v27lift37.basic.annotation.gtf.gz
+
+The first is to match gene 'names' with ensembl transcript ID
+
+The second is to extract the 'canonical' transcript for a gene (pick the appris transcript, then the longest)
+```{r}
+library(data.table)
+library(tidyverse)
+library(cowplot)
+library(stringr)
+metadata <- fread('gzcat ~/Downloads/gencode.v27lift37.metadata.HGNC.gz', header=F)
+colnames(metadata) <- c('Transcript','Name')
+gencode <- fread('gzcat ~/Downloads/gencode.v27lift37.annotation.gtf.gz', header=F, skip=4)
+gencode2 <- gencode %>% filter(V3=='transcript') %>% 
+  filter(grepl('appris_principal', V9)) %>% 
+  rowwise() %>%  
+  mutate(Transcript = str_extract(V9,'ENST\\d{11}\\.\\d+'),
+         Gene = str_extract(V9, 'gene_name\\s\\".*?;'),
+         Size=V5-V4) %>% 
+  separate(Gene, c('skip','Name','skip2'),'\"') %>% 
+  select(-skip, -skip2) %>% 
+  group_by(Name) %>% top_n(1)
+```
+
+## Load mosdepth / bedtools intersect data and prep
+Label coverage chunks with the depth of their coverage with case_when and extract the transcript name and exon number with a bunch of `separate` commands
+```{r}
+depth_data <- fread('gzcat ~/Desktop/41001412010527.per-base.labeled.bed.gz')
+dd_processed <- depth_data %>% 
+  separate(V8, c('Transcript','Rest'), '_cds_') %>% 
+  separate(Rest, c('Before','Stuff'),'_chr') %>% 
+  separate(Before, c('Exon Number','Num2'),sep='_') %>% 
+  mutate(Depth = case_when(V4 < 10 ~ '< 10 Reads', 
+                           V4 < 20 ~ '< 20 Reads', 
+                           TRUE ~ '>= 20 Reads')) %>% 
+  mutate(Depth=factor(Depth, levels=c('< 105 Reads','< 20 Reads','>= 20 Reads'))) %>% 
+  mutate(Transcript=case_when(grepl('_',Transcript) ~ gsub('_.','',Transcript), 
+                              TRUE ~ Transcript)) %>% 
+  select(Chr=V1, Start=V2, End=V3, Read_Depth=V4, Transcript, Strand=V10, Depth, `Exon Number`, ExonStart=V6, ExonEnd=V7)
+
+dd_processed <- left_join(dd_processed, metadata, by=c('Transcript'))
+
+```
+
+## Plot Maker
+```{r, fig.width=7,fig.height=3}
+genes <- c('PAX6','ABCA4','NRL','CRX','RPGR')
+transcripts = gencode2 %>% filter(Name %in% genes) %>% pull(Transcript)
+
+plot_maker <- function(tx){
+  num_of_exons <- dd_processed %>% filter(Transcript==tx) %>% pull(`Exon Number`) %>% as.numeric() %>% max()
+  gene_name <-  dd_processed %>% filter(Transcript==tx) %>% pull(Name) %>% unique()
+  # expand to create a row for each sequence and fill in previous values
+  dd_processed %>% filter(Transcript==tx) %>% group_by(`Exon Number`) %>% 
+    expand(Start=full_seq(Start,1)) %>% 
+    left_join(.,  dd_processed %>% filter(Transcript==tx)) %>% # create one row per base position, grouped by Exon Number https://stackoverflow.com/questions/42866119/fill-missing-values-in-data-frame-using-dplyr-complete-within-groups
+    fill(Chr:Name) %>% # fill missing values https://stackoverflow.com/questions/40040834/r-replace-na-with-previous-or-next-value-by-group-using-dplyr
+    ungroup() %>% 
+    mutate(`Exon Number`= factor(`Exon Number`,levels=0:num_of_exons)) %>%  
+    ggplot(aes(x=Start, xend=End, y=Read_Depth, yend=Read_Depth, colour=Depth)) + 
+    facet_wrap(~`Exon Number`, scales = 'free_x', nrow=1, strip.position = 'bottom') + 
+    geom_point(size=0.1) + theme_minimal()+ scale_color_manual(values=c('DarkRed','Red', 'Black')) + 
+    theme(axis.text.x=element_blank(), 
+          axis.ticks.x = element_blank(), 
+          panel.grid.minor = element_blank(), 
+          panel.grid.major.x = element_blank(),
+          legend.position = 'none') + 
+    ylab('Depth') + 
+    xlab(paste0(gene_name[1]))
+}
+
+
+plots <- list()
+for (i in transcripts){
+  plots[[i]] <- plot_maker(i)
+}
+legend <- get_legend(plots[[names(plots)[1]]] + theme(legend.position='right'))
+plot_grid(plot_grid(plotlist = plots, ncol=1, hjust=-2), legend, ncol=2, rel_widths = c(5,0.5))
+```
