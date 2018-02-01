@@ -15,7 +15,6 @@ Aaron told me to take the 'first tab' in each excel file. Which is not the case,
 ```{r}
 library(tidyverse)
 library(ggsci)
-library(skimr)
 cobra <- readxl::read_xls('Cobra 749--_Normalized_Data_.xls', sheet = 'Normalized 2 Base For Comb')
 cobra %>% str()
 
@@ -75,10 +74,11 @@ We also have time (Week)
 # Plot AUC by time and region and pig
 x axis is time, y axis is AUC, and split by region/pig
 ```{r}
-cobra_eel_AUC <- rbind(cobra %>% filter(Output == 'Area-Under-Curve'), eel %>% filter(Output == 'Area-Under-Curve'))
+cobra_eel_AUC <- rbind(cobra %>% filter(Output == 'Area-Under-Curve'), 
+                       eel %>% filter(Output == 'Area-Under-Curve'))
 cobra_eel_AUC %>% 
-  ggplot(aes(x=Week, y=Data, colour=Region)) + 
-  geom_point() 
+  ggplot(aes(x=Week, y=Data, shape=Region, colour=Region)) + 
+   
 ```
 
 # Prettier plot with lines and more formatting
@@ -86,14 +86,14 @@ cobra_eel_AUC %>%
 cobra_eel_AUC %>% 
   ggplot(aes(x=Week, y=Data, colour=Region, shape = Pig_Name)) + 
   geom_point(size=4) + 
-  geom_smooth() + # this draws the smoothed lines through the four points. It auto picks an algorithm that works. loess was used here
+  geom_smooth(method = 'loess') + # this draws the smoothed lines through the four points. It auto picks an algorithm that works. loess was used here
   theme_bw() + scale_colour_npg() +
   ylab('AUC') 
 ```
 
 # N1P1 Plot
 ```{r}
-rbind(cobra %>% filter(Output == 'N1P1'), eel %>% filter(Output == 'Area-Under-Curve')) %>% 
+rbind(cobra %>% filter(Output == 'N1P1'), eel %>% filter(Output == 'N1P1')) %>% 
   ggplot(aes(x=Week, y=Data, colour=Region, shape = Pig_Name)) + 
   geom_point(size=4) + 
   geom_smooth() + # this draws the smoothed lines through the four points. It auto picks an algorithm that works. loess was used here
@@ -103,12 +103,12 @@ rbind(cobra %>% filter(Output == 'N1P1'), eel %>% filter(Output == 'Area-Under-C
 
 # Latency plot
 ```{r}
-rbind(cobra %>% filter(Output == 'N1-Latency'), eel %>% filter(Output == 'Area-Under-Curve')) %>% 
+rbind(cobra %>% filter(Output == 'N1-Latency'), eel %>% filter(Output == 'N1-Latency')) %>% 
   ggplot(aes(x=Week, y=Data, colour=Region, shape = Pig_Name)) + 
   geom_point(size=4) + 
   geom_smooth() + # this draws the smoothed lines through the four points. It auto picks an algorithm that works. loess was used here
   theme_bw() + scale_colour_npg() +
-  ylab('N1P1')
+  ylab('N1-Latency')
 ```
 
 # Bonus
@@ -127,8 +127,8 @@ pca <- prcomp(all_pigs[,4:ncol(all_pigs)], scale. = T)
 # pull out PCA coordinates and add to all_pigs
 all_pigs <- cbind(all_pigs, pca$x)
 
-ggplot(all_pigs, aes(x=PC1, y=PC2, color=as.factor(Week), shape=Region)) + 
-  geom_point(size=5) + 
+ggplot(all_pigs, aes(x=PC1, y=PC4, color=as.factor(Week), shape=Region)) + 
+  geom_point(size=5, alpha=0.7) + 
   theme_bw() + 
   scale_colour_npg() 
 ```
