@@ -2,10 +2,11 @@
 title: "NGS Gene Coverage Plots"
 output: html_notebook
 ---
-# Run below on bash
+
 ## Call mosdepth on bam to calculate bp-specific read depth
-```{bash}
-# biowulf2 
+`mosdepth`, by default, will generate base pair resolution coverage. Very very quickly, compared to `bedtools genomecov` 
+```{bash, eval=F, echo=T}
+# bash 
 sinteractive --cpus-per-task 16
 module load mosdepth
 mosdepth -t 16 41001412010527 41001412010527_realigned_recal.bam &
@@ -13,7 +14,9 @@ mosdepth -t 16 41001412010527 41001412010527_realigned_recal.bam &
 
 ## Intersect base pair depth info with transcript and exon number
 The intersect is to select regions overlapping exons and to label them with the transcript name and exon number present in gencode_genes_v27lift37.codingExons.ensembl.bed.gz
-```{bash}
+```{bash, eval=F, echo=T}
+# bash
+
 # gencode_genes_v27lift37.codingExons.bed was downloaded from the UCSC table browser from genocde gene v27lift37 and 'coding exons' with 0 padding were selected as the output for the bed file
 # my ~/git/ChromosomeMappings/convert_notation.py was then used to convert the UCSC notation in ensembl notation, which my bam uses
 # files in biowulf2:/data/mcgaugheyd/genomes/GRCh37/
@@ -44,10 +47,10 @@ gencode <- fread('gzcat ~/Downloads/gencode.v27lift37.annotation.gtf.gz', header
 gencode2 <- gencode %>% filter(V3=='transcript') %>% 
   filter(grepl('appris_principal', V9)) %>% 
   rowwise() %>%  
-  mutate(Transcript = str_extract(V9,'ENST\\d{11}\\.\\d+'),
-         Gene = str_extract(V9, 'gene_name\\s\\".*?;'),
+  mutate(Transcript = str_extract(V9,'ENST\\d{11}\\.\\d+'), # use regex to graph ensembl transcript 
+         Gene = str_extract(V9, 'gene_name\\s\\".*?;'), # and the gene name
          Size=V5-V4) %>% 
-  separate(Gene, c('skip','Name','skip2'),'\"') %>% 
+  separate(Gene, c('skip','Name','skip2'),'\"') %>% # now you have to remove the 'gene name' part  
   select(-skip, -skip2) %>% 
   group_by(Name) %>% top_n(1)
 ```
@@ -63,7 +66,7 @@ dd_processed <- depth_data %>%
   mutate(Depth = case_when(V4 < 10 ~ '< 10 Reads', 
                            V4 < 20 ~ '< 20 Reads', 
                            TRUE ~ '>= 20 Reads')) %>% 
-  mutate(Depth=factor(Depth, levels=c('< 105 Reads','< 20 Reads','>= 20 Reads'))) %>% 
+  mutate(Depth=factor(Depth, levels=c('< 10 Reads','< 20 Reads','>= 20 Reads'))) %>% 
   mutate(Transcript=case_when(grepl('_',Transcript) ~ gsub('_.','',Transcript), 
                               TRUE ~ Transcript)) %>% 
   select(Chr=V1, Start=V2, End=V3, Read_Depth=V4, Transcript, Strand=V10, Depth, `Exon Number`, ExonStart=V6, ExonEnd=V7)
@@ -77,19 +80,27 @@ dd_processed <- left_join(dd_processed, metadata, by=c('Transcript'))
 genes <- c('PAX6','ABCA4','NRL','CRX','RPGR')
 transcripts = gencode2 %>% filter(Name %in% genes) %>% pull(Transcript)
 
+scale_colour_custom <- function(...){
+    ggplot2:::manual_scale('colour', 
+                           values = setNames(c('darkred', 'red', 'black'),
+                                             c('< 10 Reads','< 20 Reads','>= 20 Reads')), 
+                           ...)
+}
+
 plot_maker <- function(tx){
   num_of_exons <- dd_processed %>% filter(Transcript==tx) %>% pull(`Exon Number`) %>% as.numeric() %>% max()
   gene_name <-  dd_processed %>% filter(Transcript==tx) %>% pull(Name) %>% unique()
   # expand to create a row for each sequence and fill in previous values
   dd_processed %>% filter(Transcript==tx) %>% group_by(`Exon Number`) %>% 
-    expand(Start=full_seq(Start,1)) %>% 
+    expand(Start=full_seq(c(Start,End),1)) %>% 
     left_join(.,  dd_processed %>% filter(Transcript==tx)) %>% # create one row per base position, grouped by Exon Number https://stackoverflow.com/questions/42866119/fill-missing-values-in-data-frame-using-dplyr-complete-within-groups
     fill(Chr:Name) %>% # fill missing values https://stackoverflow.com/questions/40040834/r-replace-na-with-previous-or-next-value-by-group-using-dplyr
     ungroup() %>% 
     mutate(`Exon Number`= factor(`Exon Number`,levels=0:num_of_exons)) %>%  
+    mutate(Depth = factor(Depth, levels=c('< 10 Reads','< 20 Reads','>= 20 Reads'))) %>% 
     ggplot(aes(x=Start, xend=End, y=Read_Depth, yend=Read_Depth, colour=Depth)) + 
     facet_wrap(~`Exon Number`, scales = 'free_x', nrow=1, strip.position = 'bottom') + 
-    geom_point(size=0.1) + theme_minimal()+ scale_color_manual(values=c('DarkRed','Red', 'Black')) + 
+    geom_point(size=0.1) + theme_minimal()+ scale_colour_custom() + 
     theme(axis.text.x=element_blank(), 
           axis.ticks.x = element_blank(), 
           panel.grid.minor = element_blank(), 
@@ -106,4 +117,32 @@ for (i in transcripts){
 }
 legend <- get_legend(plots[[names(plots)[1]]] + theme(legend.position='right'))
 plot_grid(plot_grid(plotlist = plots, ncol=1, hjust=-2), legend, ncol=2, rel_widths = c(5,0.5))
+```
+
+Version 2
+```{r}
+genes <- c('PAX6','ABCA4','NRL','CRX','RPGR')
+tx = gencode2 %>% filter(Name %in% genes) %>% pull(Transcript)
+
+x <- dd_processed %>% filter(Transcript %in% tx) %>% group_by(Transcript, `Exon Number`) %>% 
+    expand(Start=full_seq(c(Start,End),1)) %>% 
+    left_join(.,  dd_processed %>% filter(Transcript %in% tx)) %>% # create one row per base position, grouped by Exon Number https://stackoverflow.com/questions/42866119/fill-missing-values-in-data-frame-using-dplyr-complete-within-groups
+    fill(Chr:Name) # fill missing values https://stackoverflow.com/questions/40040834/r-replace-na-with-previous-or-next-value-by-group-using-dplyr
+ 
+y <- x %>% group_by(Name) %>% mutate(Pos = 1:n())
+z <- y %>% group_by(Name, `Exon Number`) %>% summarise(Start=min(Pos), End=max(Pos)) %>% mutate(Exon = case_when(as.numeric(`Exon Number`) %% 2 == 0 ~ 'even', TRUE ~ 'odd'))
+zz<-bind_rows(y,z)
+
+ggplot() + 
+  geom_point(data =  zz %>% filter(is.na(Exon)), aes(x=Pos, y=Read_Depth, colour=Depth),size=0.1)  + 
+  facet_wrap(~Name, ncol=1) + 
+  geom_rect(data = zz %>% filter(!is.na(Exon)), aes(xmin=Start, xmax=End, ymin=-Inf, ymax=Inf, fill=Exon)) +  
+  scale_fill_manual(values = alpha(c("gray", "white"), .3)) +  
+  theme_minimal() +  
+  theme(axis.text.x=element_blank(), 
+        axis.ticks.x = element_blank(),
+        panel.grid.minor = element_blank(), 
+        panel.grid.major.x = element_blank())+
+  guides(fill=FALSE) + 
+  ylab('Read Depth') 
 ```
