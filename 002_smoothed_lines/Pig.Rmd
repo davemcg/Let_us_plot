@@ -9,6 +9,8 @@ Data from Aaron Rising.
 
 Two different excel files (Cobra and Eel). Pig names?
 
+They have metrics for eye function across time. 
+
 Aaron told me to take the 'first tab' in each excel file. Which is not the case, as at least to me, 'Sheet 1' is empty in both. So I'm using the next tab in both, which is 'Normalized 2 Base For Comb'
 
 # Load data and look at structure (str)
@@ -77,7 +79,7 @@ cobra_eel_AUC <- rbind(cobra %>% filter(Output == 'Area-Under-Curve'),
                        eel %>% filter(Output == 'Area-Under-Curve'))
 cobra_eel_AUC %>% 
   ggplot(aes(x=Week, y=Data, shape=Region, colour=Region)) + 
-   
+   geom_point()
 ```
 
 # Prettier plot with lines and more formatting
