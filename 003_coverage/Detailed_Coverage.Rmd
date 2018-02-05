@@ -10,6 +10,7 @@ output: html_notebook
 sinteractive --cpus-per-task 16
 module load mosdepth
 mosdepth -t 16 41001412010527 41001412010527_realigned_recal.bam &
+
 ```
 
 ## Intersect base pair depth info with transcript and exon number
@@ -75,7 +76,8 @@ dd_processed <- left_join(dd_processed, metadata, by=c('Transcript'))
 
 ```
 
-## Plot Maker
+## Plot Maker, version 1
+Faceted by exon. One plot per gene and using cowplot to *glue* them together
 ```{r, fig.width=7,fig.height=3}
 genes <- c('PAX6','ABCA4','NRL','CRX','RPGR')
 transcripts = gencode2 %>% filter(Name %in% genes) %>% pull(Transcript)
@@ -119,30 +121,32 @@ legend <- get_legend(plots[[names(plots)[1]]] + theme(legend.position='right'))
 plot_grid(plot_grid(plotlist = plots, ncol=1, hjust=-2), legend, ncol=2, rel_widths = c(5,0.5))
 ```
 
-Version 2
+## Version 2
+A bit tighter. Recalculates coordinates to glue all of the exons together in one plot. I can facet by gene. A bit harder to read, but is more accurate as the exons and gene lengths are proportional
 ```{r}
 genes <- c('PAX6','ABCA4','NRL','CRX','RPGR')
 tx = gencode2 %>% filter(Name %in% genes) %>% pull(Transcript)
 
-x <- dd_processed %>% filter(Transcript %in% tx) %>% group_by(Transcript, `Exon Number`) %>% 
+dd_expanded <- dd_processed %>% filter(Transcript %in% tx) %>% group_by(Transcript, `Exon Number`) %>% 
     expand(Start=full_seq(c(Start,End),1)) %>% 
     left_join(.,  dd_processed %>% filter(Transcript %in% tx)) %>% # create one row per base position, grouped by Exon Number https://stackoverflow.com/questions/42866119/fill-missing-values-in-data-frame-using-dplyr-complete-within-groups
     fill(Chr:Name) # fill missing values https://stackoverflow.com/questions/40040834/r-replace-na-with-previous-or-next-value-by-group-using-dplyr
  
-y <- x %>% group_by(Name) %>% mutate(Pos = 1:n())
-z <- y %>% group_by(Name, `Exon Number`) %>% summarise(Start=min(Pos), End=max(Pos)) %>% mutate(Exon = case_when(as.numeric(`Exon Number`) %% 2 == 0 ~ 'even', TRUE ~ 'odd'))
-zz<-bind_rows(y,z)
+dd_expanded <- dd_expanded %>% group_by(Name) %>% mutate(Pos = 1:n())
+even_odds_marking <- dd_expanded %>% group_by(Name, `Exon Number`) %>% summarise(Start=min(Pos), End=max(Pos)) %>% mutate(Exon = case_when(as.numeric(`Exon Number`) %% 2 == 0 ~ 'even', TRUE ~ 'odd'))
+plot_data<-bind_rows(dd_expanded,even_odds_marking)
 
 ggplot() + 
-  geom_point(data =  zz %>% filter(is.na(Exon)), aes(x=Pos, y=Read_Depth, colour=Depth),size=0.1)  + 
-  facet_wrap(~Name, ncol=1) + 
-  geom_rect(data = zz %>% filter(!is.na(Exon)), aes(xmin=Start, xmax=End, ymin=-Inf, ymax=Inf, fill=Exon)) +  
-  scale_fill_manual(values = alpha(c("gray", "white"), .3)) +  
-  theme_minimal() +  
-  theme(axis.text.x=element_blank(), 
-        axis.ticks.x = element_blank(),
-        panel.grid.minor = element_blank(), 
-        panel.grid.major.x = element_blank())+
-  guides(fill=FALSE) + 
-  ylab('Read Depth') 
+    geom_point(data =  zz %>% filter(is.na(Exon)), aes(x=Pos, y=Read_Depth, colour=Depth),size=0.1)  + 
+    facet_wrap(~Name, ncol=1) + 
+    geom_rect(data = zz %>% filter(!is.na(Exon)), aes(xmin=Start, xmax=End, ymin=-Inf, ymax=Inf, fill=Exon)) +  
+    scale_fill_manual(values = alpha(c("gray", "white"), .3)) +  
+    scale_colour_custom() +
+    theme_minimal() +  
+    theme(axis.text.x=element_blank(), 
+          axis.ticks.x = element_blank(),
+          panel.grid.minor = element_blank(), 
+          panel.grid.major.x = element_blank())+
+    guides(fill=FALSE) + 
+    ylab('Read Depth') 
 ```
