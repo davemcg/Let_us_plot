@@ -1,5 +1,5 @@
 ---
-title: "Analysis of Data from Aaron Rising (Pig something?)"
+title: "Analysis of Eye Stimuli Response"
 output: 
   html_notebook:
    toc: True
@@ -8,6 +8,8 @@ output:
 Data from Aaron Rising.
 
 Two different excel files (Cobra and Eel). Pig names?
+
+They have metrics for eye function across time. 
 
 Aaron told me to take the 'first tab' in each excel file. Which is not the case, as at least to me, 'Sheet 1' is empty in both. So I'm using the next tab in both, which is 'Normalized 2 Base For Comb'
 
@@ -42,7 +44,7 @@ eel$Output %>% unique()
 
 OK, so `Area-Under-Curve`, `N1P1`, and `N1-Latency` are the three variables we'll take a look at. Or fewer if I get confused. 
 
-Let's start by just looking at AUC. Generically it is a machine learning measure of how often an algorithm will pick distinguish the right answer over the wrong one. 1 is perfect. 0 is perfect wrong. 0.5 is a monkey flipping coins. Not sure what it means here, but that isn't a deal killer yet. 
+Let's start by just looking at AUC. Generically it is a machine learning measure of how often an algorithm will distinguish the right answer over the wrong one. 1 is perfect. 0 is perfect wrong. 0.5 is a monkey flipping coins. Not sure what it means here.
 
 # Summary of eel and cobra AUC
 Get the summary data from just the AUC values for each pig
@@ -61,15 +63,14 @@ cobra %>% filter(Output == 'Area-Under-Curve')
 Oh, we have *two kinds or regions*. Didn't see that before. So the above summary doesn't take that into account. 
 
 # Summary by pig and region
+This summary is `group_by(Region)` so we'll get summary data (`mean` and `median`) by Region now
 ```{r}
 cobra %>% filter(Output == 'Area-Under-Curve') %>% group_by(Region) %>% summarise(mean = mean(Data), median= median(Data))
 eel %>% filter(Output == 'Area-Under-Curve') %>% group_by(Region) %>% summarise(mean = mean(Data), median= median(Data))
 ```
 
 
-We also have time (Week)
-
-
+We also have time (Week). This will be our x axis when we plot, as this data is sampled across time
 
 # Plot AUC by time and region and pig
 x axis is time, y axis is AUC, and split by region/pig
@@ -78,10 +79,11 @@ cobra_eel_AUC <- rbind(cobra %>% filter(Output == 'Area-Under-Curve'),
                        eel %>% filter(Output == 'Area-Under-Curve'))
 cobra_eel_AUC %>% 
   ggplot(aes(x=Week, y=Data, shape=Region, colour=Region)) + 
-   
+   geom_point()
 ```
 
 # Prettier plot with lines and more formatting
+Using the ggsci library with the Nature Publishing Group color scheme (`scale_colour_npg()`)
 ```{r}
 cobra_eel_AUC %>% 
   ggplot(aes(x=Week, y=Data, colour=Region, shape = Pig_Name)) + 
@@ -124,7 +126,7 @@ all_pigs <- all_pigs %>% select(-`P-Prime-Latency`)
 all_pigs <- all_pigs[complete.cases(all_pigs), complete.cases(t(all_pigs))]
 pca <- prcomp(all_pigs[,4:ncol(all_pigs)], scale. = T)
 
-# pull out PCA coordinates and add to all_pigs
+# pull out PCA coordinates (pca$x) and add to all_pigs with the cbind
 all_pigs <- cbind(all_pigs, pca$x)
 
 ggplot(all_pigs, aes(x=PC1, y=PC4, color=as.factor(Week), shape=Region)) + 
