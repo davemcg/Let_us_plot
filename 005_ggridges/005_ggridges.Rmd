@@ -1,0 +1,89 @@
+---
+title: 'Let’s Plot 5: ridgeline density plots'
+author: David McGaughey
+output:
+  html_notebook:
+      theme: flatly
+---
+
+# Intro
+For this installment of Let's Plot (where anyone can make a figure!), we'll be making the hottest visualization of 2017 - the *joy plot* or *ridgeline plot*. This type of visualization was inspired by the [cover art](https://en.wikipedia.org/wiki/Unknown_Pleasures) from Joy Division’s album Unknown Pleasures and was implemented by Claus Wilke. While the original term for this plot took off as *joy plot* it has since been changed to a *ridgeline plot*, as discussed at length [here](http://serialmentor.com/blog/2017/9/15/goodbye-joyplots). 
+
+Anyways, Claus has a *beautiful* intro to his package [here](https://cran.r-project.org/web/packages/ggridges/vignettes/gallery.html). I will not reproduce any of his plots, as I want you to click the link. Plus they are way cooler looking than what we will be making. Which is real(ish) data from people in my division. 
+Joyplots are partially overlapping line plots that create the impression of a mountain range. They can be quite useful for visualizing changes in distributions over time or space. The name “joyplot” was proposed by Jenny Bryan on Twitter on April 24, 2017, in reference to the iconic cover art for Joy Division’s album Unknown Pleasures.
+
+
+# Load Davide merged data
+This is a highly cut down version of his original data - which is a 160mb csv file!
+
+It contains cell area size for thousands of cells which have had a drug perturbation. 
+```{r, include=F}
+library(tidyverse)
+library(ggridges)
+merged.df <- read_csv('~/git/Let_us_plot/005_ggridges/davide_cell_size_data.csv')
+```
+
+# What does the data look like? 
+```{r}
+head(merged.df)
+```
+
+# First we create a fake DMSO to match each drug so we can see the 'null' distribution matched with each drug in the visualization below
+```{r}
+# for background DMSO plot
+fake_DMSO_drug <- data.frame()
+for (i in (merged.df$Drug %>% unique())){
+  print(i)
+  fake_DMSO_drug <- rbind(fake_DMSO_drug, merged.df %>% filter(Drug=='DMSO') %>% mutate(Drug = i, Well.names=paste0('0DMSO_', i), DMSO='Yes'))
+}
+
+# merged.df %>% mutate(`Drug Well` = paste(Drug, Well.names)) %>% mutate(Drug=factor(Drug, levels=drug_order)) %>% ggplot(aes(y = Drug, x=log2(Area), group=Well.names, fill=Drug)) +
+#     geom_density_ridges(alpha=0.5) + theme_ridges() + scale_color_brewer(palette='Spectral')
+
+# order drugs by median area
+drug_order <- merged.df %>% group_by(Drug) %>% summarise(MedianArea=median(Area)) %>% arrange(MedianArea) %>% pull(Drug)
+```
+
+# ridgeline plot, showing each well separately
+```{r, fig.height=2}
+bind_rows(merged.df %>% mutate(DMSO='No'),fake_DMSO_drug) %>% 
+  filter(Drug!='DMSO', Drug!='Pyr') %>% # don't need DMSO plot now and Pyr is empty
+  mutate(Drug=factor(Drug, levels=drug_order)) %>% # reorder drugs by drug_order above 
+  ggplot(aes(y = Drug, x=log2(Area), group=Well.names, fill=DMSO)) +
+  geom_density_ridges(alpha=0.6) + 
+  theme_ridges() + 
+  scale_fill_brewer(palette = 'Set1')
+```
+
+# same, but merging all wells together
+```{r, fig.height=2}
+
+bind_rows(merged.df %>% 
+            mutate(DMSO='No', Well.names2=paste0('Orig', Drug)),
+          fake_DMSO_drug %>% 
+            mutate(Well.names2 = Well.names)) %>% 
+  filter(Drug!='DMSO', Drug!='Pyro') %>% # dont' need DMSO plot now and Pyroxamine is empty
+  mutate(Drug=factor(Drug, levels=drug_order)) %>% # reorder drugs by drug_order above 
+  ggplot(aes(y = Drug, x = log2(Area), group=Well.names2, fill=DMSO)) +
+  geom_density_ridges(alpha=0.6) + 
+  theme_ridges() + 
+  scale_fill_brewer(palette = 'Set1')
+
+```
+
+# You have a large variation in the number of counts
+How did I know? Because a bunch of the density plots were super wavy - which means (usually) that the number of counts in that sample is low. Low numbers = high variance. 
+
+So IMR, IMP, Tori, and WYE are *problem* tests. Perhaps they are just killing the cells?
+```{r}
+cell_area_counts_by_drug <- merged.df %>% 
+  group_by(Drug) %>% 
+  summarise(Count=n())
+
+cell_area_counts_by_drug  %>% 
+  ggplot(aes(x=Drug, y=Count)) +
+  geom_bar(stat='identity') + 
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
