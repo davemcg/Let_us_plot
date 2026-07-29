@@ -1,0 +1,21 @@
+---
+title: "Prep DESeq2 Expression Data For Let's Plot"
+output: html_notebook
+---
+
+vst from 01_HS_versus_HIHS.Rmd
+
+Take vst DESeq2 object and only keep genes with variance > 1
+```{r}
+var_added <-vst %>% assay() %>% data.frame() %>% rownames_to_column('Gene') %>% rowwise() %>% mutate(var = var(c(X10_RS,X11_RS, X16_RS, X17_RS, X18_RS, X2_RS, X3_RS, X4_RS, X9_RS)))
+var_added$var %>% summary()
+
+expression <- var_added %>% filter(var > 1)
+dim(expression)
+colnames(expression) <- gsub('_RS', '', colnames(expression))
+expression %>% head()
+save(expression, file='~/git/Let_us_plot/006_heatmaps/expression.Rdata')
+
+metadata <- full_metadata %>% rowwise() %>% mutate(sample=gsub('_RS', '', sample)) %>% filter(sample %in% c('10','11','16','17','18','2','3','4','9')) %>% dplyr::select(sample, serum, treatment_hours) %>% unique()
+save(metadata, file = '~/git/Let_us_plot/006_heatmaps/metadata.Rdata')
+```
