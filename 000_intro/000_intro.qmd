@@ -1,0 +1,68 @@
+---
+title: "2026.LP000.Intro"
+author: "David McGaughey"
+date: today
+format:
+  html:
+    theme: flatly
+    toc: true
+    code-fold: false
+execute:
+  message: false
+  warning: false
+  fig-width: 6
+  fig-height: 4
+  fig-dpi: 300
+  error: true
+knitr:
+  opts_chunk:
+    collapse: true
+    comment: "#>"
+---
+
+# Core Principles
+
+```
+1. Size of data (magnitudes matter - b (bytes), kb, mb, gb, tb, pb)
+  - each step is 1000X  
+  - Bigger or smaller than laptop
+2. Data is in a **file** (usually)
+  - Excel
+  - Text
+  - Something else?
+3. R and Rstudio install
+  - Need both
+  - R is the language
+  - Rstudio is the GUI/CLI 
+4. GUI vs CLI
+5. What is code?
+  - Written (typed) commands
+  - Code is **deterministic**
+  - It will (usually) do the same thing every time
+  - R plots are code
+6. How to get un-stuck
+  - search it up (e.g. Google) or prompt it up (e.g. Gemini, Claude, ChatGPT)
+
+```
+
+# Your Very First Plot
+```{r}
+library(tidyverse)
+
+# R vectors
+# why is it called a vector? I don't know...
+# vector has a wide range of meanings (math <-> biology <-> physics <-> programming)
+microgram_dna <- c(1,10,45,3,15)
+tube <- c(1,2,3,4,5)
+
+# cbind "column binds" the two vectors together into a table
+data_table <- cbind(tube, microgram_dna)
+
+
+ggplot(data_table,
+       aes(x=tube,y=microgram_dna)) + 
+  # geom for geometry
+  # col for "column"
+  geom_col()
+```
+
